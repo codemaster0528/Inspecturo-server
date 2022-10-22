@@ -1,5 +1,5 @@
 const express = require("express");
-const db = require("./config/db");
+const db = require("./config/database.config");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const md5 = require("md5");
