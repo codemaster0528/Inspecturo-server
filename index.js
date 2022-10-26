@@ -3,30 +3,21 @@ const db = require("./config/database.config");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const md5 = require("md5");
+let bodyParser = require("body-parser");
 
 const app = express();
 const PORT = 9118;
-app.use(cors());
-app.use(express.json());
 
-var users = [
-  {
-    id: 1,
-    role: "admin",
-    password: "admin",
-    fullName: "John Doe",
-    username: "johndoe",
-    email: "admin@materialize.com",
-  },
-  {
-    id: 2,
-    role: "client",
-    password: "client",
-    fullName: "Jane Doe",
-    username: "janedoe",
-    email: "client@materialize.com",
-  },
-];
+app.use(express.json());
+app.use(bodyParser.json());
+app.use(
+  bodyParser.urlencoded({
+    extended: true,
+  })
+);
+app.use(cors());
+
+var users = [];
 
 const jwtConfig = {
   secret: "dd5f3089-40c3-403d-af14-d0c228b05cb4",
@@ -39,7 +30,6 @@ db.query("SELECT * FROM inspecturo_users", (err, result) => {
     console.log(err);
   }
   users = result;
-  console.log(users);
 });
 
 // Login
@@ -95,6 +85,29 @@ app.post("/forgotPassword", (req, res) => {
 
     return res.status(200).send(error);
   }
+});
+
+// Get CarImage from Inspecturo_manufacturers
+app.get("/getcarimage", (req, res) => {
+  const carMake = req.query.carMake;
+  var carImage;
+  db.query(
+    'SELECT * FROM inspecturo_manufacturers where inspecturo_maufacturerName="' +
+      carMake +
+      '"',
+    (err, result) => {
+      if (err) {
+        return res.status(200).send("abbott-detroit.png");
+      }
+
+      if (result.length == 0) {
+        return res.status(200).send("abbott-detroit.png");
+      } else {
+        carImage = result[0].inspecturo_maufacturerValue;
+      }
+      return res.status(200).send(carImage);
+    }
+  );
 });
 
 app.listen(PORT, () => {
