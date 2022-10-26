@@ -6,7 +6,7 @@ const md5 = require("md5");
 let bodyParser = require("body-parser");
 
 const app = express();
-const PORT = 9118;
+const PORT = 9118; // Server PORT
 
 app.use(express.json());
 app.use(bodyParser.json());
@@ -18,6 +18,7 @@ app.use(
 app.use(cors());
 
 var users = [];
+var regions = [];
 
 const jwtConfig = {
   secret: "dd5f3089-40c3-403d-af14-d0c228b05cb4",
@@ -32,6 +33,17 @@ db.query("SELECT * FROM inspecturo_users", (err, result) => {
   users = result;
 });
 
+// Get Regions From Database
+db.query(
+  "SELECT inspecturo_regionValue FROM inspecturo_regions",
+  (err, result) => {
+    if (err) {
+      console.log(err);
+    }
+    regions = result;
+  }
+);
+
 // Login
 app.post("/jwt/login", (req, res) => {
   const { email, password } = req.body;
@@ -39,31 +51,60 @@ app.post("/jwt/login", (req, res) => {
   let error = {
     email: ["Something went wrong"],
   };
+
+  // Search user from database with Email and Password
   const user = users.find(
     (u) =>
       u.inspecturo_userEmail === email &&
       u.inspecturo_userPassword === md5(password)
   );
+
+  // User is exist. Email & Password
   if (user) {
     const accessToken = jwt.sign(
       { id: user.inspecturo_userId },
       jwtConfig.secret
     );
+
+    // Get user regions from database.
+    const userRegionsID = user.inspecturo_userRegions.split(",");
+    let userRegionsText = [];
+    console.log(userRegionsID);
+    console.log(userRegionsID.length);
+    for (let i = 0; i < userRegionsID.length; i++) {
+      userRegionsText[i] = regions[i];
+    }
+
+    console.log(userRegionsText);
     const response = {
       accessToken,
+      userEmail: user.inspecturo_userEmail,
+      userName: user.inspecturo_userName,
+      userRegions: userRegionsText,
+      userStatus: user.inspecturo_userStatus,
+      userAddons: user.inspecturo_userAddons,
     };
-    console.log("* : " + user.inspecturo_userStatus);
+
+    // User is exist but disabled.
     if (user.inspecturo_userStatus != "ACTIVE") {
       error = {
         email: ["User is not activated"],
       };
       return res.status(400).send(error);
     }
+
+    // Success Login
     console.log(response);
     return res.status(200).send(response);
-  } else {
+  }
+
+  // User does not exist. Email & Password
+  else {
     const user = users.find((u) => u.inspecturo_userEmail === email);
+
+    // Password incorrect
     if (user) error = { password: ["Password is incorrect"] };
+    // Email invalid
     else {
       error = {
         email: ["Email is Invalid"],
