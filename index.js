@@ -49,18 +49,26 @@ app.post("/jwt/login", (req, res) => {
       { id: user.inspecturo_userId },
       jwtConfig.secret
     );
-
     const response = {
       accessToken,
     };
+    console.log("* : " + user.inspecturo_userStatus);
+    if (user.inspecturo_userStatus != "ACTIVE") {
+      error = {
+        email: ["User is not activated"],
+      };
+      return res.status(400).send(error);
+    }
     console.log(response);
     return res.status(200).send(response);
   } else {
-    console.log("not");
-    error = {
-      email: ["email or Password is Invalid"],
-    };
-
+    const user = users.find((u) => u.inspecturo_userEmail === email);
+    if (user) error = { password: ["Password is incorrect"] };
+    else {
+      error = {
+        email: ["Email is Invalid"],
+      };
+    }
     return res.status(400).send(error);
   }
 });
