@@ -80,7 +80,8 @@ app.post("/jwt/login", (req, res) => {
       accessToken,
       userEmail: user.inspecturo_userEmail,
       userName: user.inspecturo_userName,
-      userRegions: userRegionsText,
+      userRegionIds: user.inspecturo_userRegions,
+      userRegionTexts: userRegionsText,
       userStatus: user.inspecturo_userStatus,
       userAddons: user.inspecturo_userAddons,
     };
@@ -116,23 +117,25 @@ app.post("/jwt/login", (req, res) => {
 
 // Forgot Password
 app.post("/forgotPassword", (req, res) => {
-  const email = req.body;
+  const email = req.body.email;
 
   let error = {
     email: ["Something went wrong"],
   };
+  console.log(users);
+  console.log(email);
   const user = users.find((u) => u.inspecturo_userEmail === email);
+
+  console.log("user : " + user);
   if (user) {
     const response = "Password reset recovery link has been sent to email";
     console.log(response);
     return res.status(200).send(response);
   } else {
-    console.log("not");
     error = {
       email: ["Email is Invalid"],
     };
-
-    return res.status(200).send(error);
+    return res.status(400).send(error);
   }
 });
 
