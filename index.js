@@ -1,13 +1,18 @@
+// core modules
 const express = require("express");
-const db = require("./config/database.config");
+const path = require("path");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const md5 = require("md5");
 let bodyParser = require("body-parser");
+var nodemailer = require("nodemailer");
+
+// config
+const db = require("./config/database.config");
+const auth = require("./config/auth.config");
+const server = require("./config/server.config");
 
 const app = express();
-const PORT = 9118; // Server PORT
-
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(
@@ -17,32 +22,39 @@ app.use(
 );
 app.use(cors());
 
-var users = [];
-var regions = [];
-
-const jwtConfig = {
-  secret: "dd5f3089-40c3-403d-af14-d0c228b05cb4",
-  refreshTokenSecret: "7c4c1c50-3230-45bf-9eae-c9b2e401c767",
-};
+var users = []; // users from database
+var regions = []; // regions from database
 
 // Get Users From Database
-db.query("SELECT * FROM inspecturo_users", (err, result) => {
-  if (err) {
-    console.log(err);
-  }
-  users = result;
-});
-
-// Get Regions From Database
-db.query(
-  "SELECT inspecturo_regionValue FROM inspecturo_regions",
-  (err, result) => {
+function getUsers() {
+  db.query("SELECT * FROM inspecturo_users", (err, result) => {
     if (err) {
       console.log(err);
     }
-    regions = result;
-  }
-);
+    users = result;
+  });
+}
+// Get Regions From Database
+function getRegions() {
+  db.query(
+    "SELECT inspecturo_regionValue FROM inspecturo_regions",
+    (err, result) => {
+      if (err) {
+        console.log(err);
+      }
+      regions = result;
+    }
+  );
+}
+
+getUsers();
+getRegions();
+
+app.use(express.static(path.join(__dirname, "out")));
+
+app.get("/*", (req, res) => {
+  res.sendFile(path.join(__dirname, "out", "index.html"));
+});
 
 // Login
 app.post("/jwt/login", (req, res) => {
@@ -59,23 +71,18 @@ app.post("/jwt/login", (req, res) => {
       u.inspecturo_userPassword === md5(password)
   );
 
+  console.log(user);
   // User is exist. Email & Password
   if (user) {
-    const accessToken = jwt.sign(
-      { id: user.inspecturo_userId },
-      jwtConfig.secret
-    );
+    const accessToken = jwt.sign({ id: user.inspecturo_userId }, auth.secret);
 
     // Get user regions from database.
     const userRegionsID = user.inspecturo_userRegions.split(",");
     let userRegionsText = [];
-    console.log(userRegionsID);
-    console.log(userRegionsID.length);
     for (let i = 0; i < userRegionsID.length; i++) {
       userRegionsText[i] = regions[i];
     }
 
-    console.log(userRegionsText);
     const response = {
       accessToken,
       userEmail: user.inspecturo_userEmail,
@@ -115,6 +122,28 @@ app.post("/jwt/login", (req, res) => {
   }
 });
 
+// Authentication
+app.get("/auth/me", (req, res) => {
+  const token = req.headers.authorization;
+
+  // get the decoded payload and header
+  const decoded = jwt.decode(token, { complete: true });
+  if (decoded) {
+    const { id: userId } = decoded.payload;
+    const userData = JSON.parse(
+      JSON.stringify(users.find((u) => u.inspecturo_userId === userId))
+    );
+    delete userData.inspecturo_userPassword;
+
+    return res.status(200).send({ userData });
+  } else {
+    error = {
+      email: ["Invalid User"],
+    };
+    return res.status(400).send(error);
+  }
+});
+
 // Forgot Password
 app.post("/forgotPassword", (req, res) => {
   const email = req.body.email;
@@ -122,20 +151,101 @@ app.post("/forgotPassword", (req, res) => {
   let error = {
     email: ["Something went wrong"],
   };
-  console.log(users);
-  console.log(email);
   const user = users.find((u) => u.inspecturo_userEmail === email);
 
-  console.log("user : " + user);
   if (user) {
     const response = "Password reset recovery link has been sent to email";
-    console.log(response);
+
+    var transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: "juri.god0403@gmail.com",
+        pass: "pfbfiriqcxsfthsx",
+      },
+    });
+
+    function makeid(length) {
+      var result = "";
+      var characters =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      var charactersLength = characters.length;
+      for (var i = 0; i < length; i++) {
+        result += characters.charAt(
+          Math.floor(Math.random() * charactersLength)
+        );
+      }
+      return result;
+    }
+
+    var reset_password = makeid(40);
+
+    db.query(
+      `UPDATE inspecturo_users SET inspecturo_userPassword = "${reset_password}"`,
+      (err, result) => {
+        if (err) {
+          console.log(err);
+        }
+        console.log(result);
+      }
+    );
+
+    var mailOptions = {
+      from: "Inspecturo.support@gmail.com",
+      to: email,
+      subject: "Password Reset Link",
+      html: `<h1>Inspecturo.com</h1><a href="${server.website_url}/reset-password?q=${reset_password}">Password Reset</a>`,
+    };
+
+    getUsers();
+    transporter.sendMail(mailOptions, function (error, info) {
+      if (error) {
+        console.log(error);
+      } else {
+        console.log("Email sent: " + info.response);
+      }
+    });
+
     return res.status(200).send(response);
   } else {
     error = {
       email: ["Email is Invalid"],
     };
     return res.status(400).send(error);
+  }
+});
+
+app.get("/reset-password", (req, res) => {
+  var q = req.query.q;
+  console.log(q);
+  const user = users.find((u) => u.inspecturo_userPassword === q);
+  console.log(user);
+  if (user) {
+    return res.redirect(`${server.website_url}/reset-password?q=${q}`);
+  }
+  return res.status(400).send("Invalid Link");
+});
+
+app.post("/resetPassword", (req, res) => {
+  const resetToken = req.body.resetToken;
+  const newPassword = req.body.newPassword;
+  const hashPassword = md5(newPassword);
+
+  const user = users.find((u) => u.inspecturo_userPassword === resetToken);
+
+  if (user) {
+    db.query(
+      `UPDATE inspecturo_users SET inspecturo_userPassword = "${hashPassword}"`,
+      (err, result) => {
+        if (err) {
+          return res.status(400).send(err);
+        }
+
+        getUsers();
+        return res.status(200).send(newPassword);
+      }
+    );
+  } else {
+    return res.status(200).send("Invalid Reset Link");
   }
 });
 
@@ -162,6 +272,6 @@ app.get("/getcarimage", (req, res) => {
   );
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on ${PORT}`);
+app.listen(server.port, () => {
+  console.log(`Server is running on ${server.port}`);
 });
